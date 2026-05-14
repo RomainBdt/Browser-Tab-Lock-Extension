@@ -130,10 +130,16 @@ chrome.webNavigation.onBeforeNavigate.addListener((details) => {
   if (normalize(newUrl) === normalize(lockedUrl)) return;
 
   // It's a different URL — cancel is not possible via webNavigation API,
-  // so we redirect back immediately and open new tab
+  // so we redirect back immediately and open new tab.
   chrome.tabs.update(tabId, { url: lockedUrl }, () => {
-    // Open the intended URL in a new tab
-    chrome.tabs.create({ url: newUrl, active: true });
+    chrome.tabs.get(tabId, (tab) => {
+      const createDetails = { url: newUrl, active: true };
+      if (tab && !chrome.runtime.lastError) {
+        createDetails.index = tab.index + 1;
+        createDetails.windowId = tab.windowId;
+      }
+      chrome.tabs.create(createDetails);
+    });
   });
 });
 
