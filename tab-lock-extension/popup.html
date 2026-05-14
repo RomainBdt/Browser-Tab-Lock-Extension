@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tab Lock</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@400;700;800&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d0d0f;
+      --surface: #16161a;
+      --border: #2a2a32;
+      --accent: #e8ff47;
+      --accent-dim: rgba(232,255,71,0.12);
+      --accent-glow: rgba(232,255,71,0.25);
+      --text: #f0f0f4;
+      --muted: #6b6b7a;
+      --danger: #ff4d6d;
+      --danger-dim: rgba(255,77,109,0.12);
+      --locked: #e8ff47;
+      --radius: 10px;
+    }
+
+    html, body {
+      width: 320px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Syne', sans-serif;
+    }
+
+    body {
+      padding: 0;
+      overflow: hidden;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 16px 18px 12px;
+      border-bottom: 1px solid var(--border);
+      position: relative;
+    }
+
+    .header::after {
+      content: '';
+      position: absolute;
+      bottom: -1px; left: 18px; right: 18px;
+      height: 1px;
+      background: linear-gradient(90deg, var(--accent), transparent);
+      opacity: 0.4;
+    }
+
+    .logo {
+      width: 28px; height: 28px;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    .logo svg { width: 100%; height: 100%; }
+
+    .header-title {
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text);
+    }
+
+    .header-badge {
+      margin-left: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 20px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      letter-spacing: 0.05em;
+      transition: all 0.3s;
+    }
+
+    .header-badge.active {
+      background: var(--accent-dim);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* Status area */
+    .status-area {
+      padding: 16px 18px 10px;
+    }
+
+    .status-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .url-display {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--text);
+      word-break: break-all;
+      line-height: 1.5;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      transition: border-color 0.3s, background 0.3s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .url-display.locked {
+      border-color: var(--accent);
+      background: var(--accent-dim);
+      color: var(--accent);
+    }
+
+    .url-display.locked::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0;
+      width: 3px; height: 100%;
+      background: var(--accent);
+    }
+
+    .url-text {
+      padding-left: 4px;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+
+    /* Indicator dots */
+    .indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 0 0;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+    }
+
+    .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex-shrink: 0;
+      transition: background 0.3s, box-shadow 0.3s;
+    }
+
+    .dot.on {
+      background: var(--accent);
+      box-shadow: 0 0 6px var(--accent-glow);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    /* Main toggle button */
+    .btn-area {
+      padding: 10px 18px 16px;
+    }
+
+    .btn-lock {
+      width: 100%;
+      padding: 13px;
+      border-radius: var(--radius);
+      border: 1.5px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-family: 'Syne', sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      transition: all 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn-lock::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: var(--accent);
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    .btn-lock:hover::before { opacity: 0.06; }
+
+    .btn-lock:active { transform: scale(0.98); }
+
+    .btn-lock.locked {
+      background: var(--accent-dim);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .btn-lock.locked:hover {
+      background: var(--danger-dim);
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+
+    .btn-lock.locked:hover .btn-icon-locked { display: none; }
+    .btn-lock.locked:hover .btn-icon-unlock { display: block; }
+    .btn-lock.locked .btn-icon-unlock { display: none; }
+
+    .btn-icon { display: flex; align-items: center; position: relative; z-index: 1; }
+    .btn-label { position: relative; z-index: 1; }
+
+    .btn-lock:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* Info section */
+    .info-section {
+      padding: 0 18px 16px;
+    }
+
+    .info-item {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      padding: 7px 0;
+      border-top: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .info-item .info-icon {
+      flex-shrink: 0;
+      margin-top: 1px;
+      color: var(--accent);
+      opacity: 0.7;
+    }
+
+    /* Restricted page message */
+    .restricted-msg {
+      padding: 16px 18px;
+      text-align: center;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .restricted-icon {
+      font-size: 24px;
+      margin-bottom: 8px;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">
+      <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="6" y="12" width="16" height="13" rx="2.5" fill="none" stroke="#e8ff47" stroke-width="1.8"/>
+        <path d="M9.5 12V8.5C9.5 6.015 11.515 4 14 4C16.485 4 18.5 6.015 18.5 8.5V12" stroke="#e8ff47" stroke-width="1.8" stroke-linecap="round"/>
+        <circle cx="14" cy="18.5" r="2" fill="#e8ff47"/>
+        <line x1="14" y1="20.5" x2="14" y2="23" stroke="#e8ff47" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="header-title">Tab Lock</div>
+    <div class="header-badge" id="statusBadge">UNLOCKED</div>
+  </div>
+
+  <div id="mainContent">
+    <div class="status-area">
+      <div class="status-label">Current URL</div>
+      <div class="url-display" id="urlDisplay">
+        <span class="url-text" id="urlText">Loading…</span>
+      </div>
+      <div class="indicator">
+        <div class="dot" id="statusDot"></div>
+        <span id="statusText">Tab is not locked</span>
+      </div>
+    </div>
+
+    <div class="btn-area">
+      <button class="btn-lock" id="btnLock" disabled>
+        <span class="btn-icon">
+          <!-- Unlocked icon -->
+          <svg class="btn-icon-unlock" style="display:none" width="15" height="15" viewBox="0 0 15 15" fill="none">
+            <path d="M5 7V5a3 3 0 016 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            <rect x="2" y="7" width="11" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/>
+          </svg>
+          <!-- Locked icon (shown when locked) -->
+          <svg class="btn-icon-locked" width="15" height="15" viewBox="0 0 15 15" fill="none">
+            <path d="M4 7V5a3.5 3.5 0 017 0v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            <rect x="2" y="7" width="11" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/>
+            <circle cx="7.5" cy="11" r="1.2" fill="currentColor"/>
+          </svg>
+          <!-- Default lock icon (shown when unlocked) -->
+          <svg id="btnIconDefault" width="15" height="15" viewBox="0 0 15 15" fill="none">
+            <path d="M4 7V5a3.5 3.5 0 017 0v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            <rect x="2" y="7" width="11" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/>
+            <circle cx="7.5" cy="11" r="1.2" fill="currentColor"/>
+          </svg>
+        </span>
+        <span class="btn-label" id="btnLabel">Lock This Tab</span>
+      </button>
+    </div>
+
+    <div class="info-section">
+      <div class="info-item">
+        <span class="info-icon">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M6 1v4l2.5 1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+            <circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.2"/>
+          </svg>
+        </span>
+        <span>When locked, any link click or navigation opens a <strong style="color:#f0f0f4">new tab</strong> instead.</span>
+      </div>
+      <div class="info-item">
+        <span class="info-icon">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <rect x="1" y="3" width="10" height="8" rx="1.2" stroke="currentColor" stroke-width="1.2"/>
+            <path d="M4 3V2a2 2 0 014 0v1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <span>The locked URL is saved across sessions. Closing and reopening the tab removes the lock.</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="restrictedContent" style="display:none">
+    <div class="restricted-msg">
+      <span class="restricted-icon">🔒</span>
+      Tab Lock cannot operate on<br/>browser internal pages.
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
