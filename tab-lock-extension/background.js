@@ -1,5 +1,5 @@
 // Tab Lock - Background Service Worker
-// Stores locked tabs: { tabId: { url, lockedAt } }
+// Stores locked tabs: { tabId: { url, origin } }
 let lockedTabs = {};
 
 // Load persisted locked tabs on startup
@@ -7,9 +7,9 @@ chrome.storage.local.get(['lockedTabs'], (result) => {
   if (result.lockedTabs) {
     lockedTabs = result.lockedTabs;
     updateAllIcons();
-    // Re-apply all indicators on already-loaded locked tabs
+    // Re-apply title prefix on all currently-loaded locked tabs
     Object.keys(lockedTabs).forEach(tabId => {
-      applyLockIndicators(Number(tabId));
+      applyTitlePrefix(Number(tabId));
     });
   }
 });
@@ -27,23 +27,22 @@ function updateIcon(tabId, locked) {
 
 function updateAllIcons() {
   chrome.tabs.query({}, (tabs) => {
-    tabs.forEach(tab => updateIcon(tab.id, !!lockedTabs[tab.id]));
+    tabs.forEach(tab => {
+      updateIcon(tab.id, !!lockedTabs[tab.id]);
+    });
   });
 }
 
-// ─── Content script injection ────────────────────────────────────────────────
-
-// Inject title prefix + beforeunload confirmation into the page
-function applyLockIndicators(tabId) {
+// Inject a content script that prefixes the document.title with 🔒
+function applyTitlePrefix(tabId) {
   chrome.scripting.executeScript({
     target: { tabId },
     func: () => {
-      // --- 🔒 Title prefix ---
       const PREFIX = '🔒 ';
       if (!document.title.startsWith(PREFIX)) {
         document.title = PREFIX + document.title;
       }
-      // Watch for dynamic title changes (SPAs)
+      // Also watch for dynamic title changes (SPAs, etc.)
       if (window.__tabLockObserver) window.__tabLockObserver.disconnect();
       const observer = new MutationObserver(() => {
         if (!document.title.startsWith(PREFIX)) {
@@ -55,24 +54,12 @@ function applyLockIndicators(tabId) {
         { childList: true, characterData: true, subtree: true }
       );
       window.__tabLockObserver = observer;
-
-      // --- Close confirmation ---
-      // Deregister any stale handler before adding a fresh one
-      if (window.__tabLockBeforeUnload) {
-        window.removeEventListener('beforeunload', window.__tabLockBeforeUnload);
-      }
-      window.__tabLockBeforeUnload = (e) => {
-        e.preventDefault();
-        e.returnValue = 'This tab is locked. Are you sure you want to close it?';
-        return e.returnValue;
-      };
-      window.addEventListener('beforeunload', window.__tabLockBeforeUnload);
     },
-  }).catch(() => {}); // silently fail on restricted/internal pages
+  }).catch(() => {}); // silently fail on restricted pages
 }
 
-// Remove all lock indicators from the page
-function removeLockIndicators(tabId) {
+// Remove the 🔒 prefix and stop the observer
+function removeTitlePrefix(tabId) {
   chrome.scripting.executeScript({
     target: { tabId },
     func: () => {
@@ -84,30 +71,27 @@ function removeLockIndicators(tabId) {
       if (document.title.startsWith(PREFIX)) {
         document.title = document.title.slice(PREFIX.length);
       }
-      if (window.__tabLockBeforeUnload) {
-        window.removeEventListener('beforeunload', window.__tabLockBeforeUnload);
-        window.__tabLockBeforeUnload = null;
-      }
     },
   }).catch(() => {});
 }
 
-// ─── Lock / Unlock ───────────────────────────────────────────────────────────
-
+// Lock a tab to its current URL
 function lockTab(tabId, url) {
   lockedTabs[tabId] = { url, lockedAt: Date.now() };
   persist();
   updateIcon(tabId, true);
-  applyLockIndicators(tabId);
+  applyTitlePrefix(tabId);
 }
 
+// Unlock a tab
 function unlockTab(tabId) {
-  removeLockIndicators(tabId);
+  removeTitlePrefix(tabId);
   delete lockedTabs[tabId];
   persist();
   updateIcon(tabId, false);
 }
 
+// Toggle lock state
 function toggleLock(tabId, currentUrl) {
   if (lockedTabs[tabId]) {
     unlockTab(tabId);
@@ -118,6 +102,7 @@ function toggleLock(tabId, currentUrl) {
   }
 }
 
+// Check if a tab is locked
 function isLocked(tabId) {
   return !!lockedTabs[tabId];
 }
@@ -126,29 +111,36 @@ function getLockedUrl(tabId) {
   return lockedTabs[tabId]?.url || null;
 }
 
-// ─── Navigation interception ─────────────────────────────────────────────────
+// --- Navigation interception ---
 
+// Fires before navigation commits — cancel and open new tab instead
 chrome.webNavigation.onBeforeNavigate.addListener((details) => {
-  if (details.frameId !== 0) return; // main frame only
+  // Only handle main frame navigations (not iframes, subresources)
+  if (details.frameId !== 0) return;
 
   const tabId = details.tabId;
   if (!isLocked(tabId)) return;
 
   const lockedUrl = getLockedUrl(tabId);
   const newUrl = details.url;
+
+  // Normalize: strip trailing slash for comparison
   const normalize = (u) => u.replace(/\/$/, '');
   if (normalize(newUrl) === normalize(lockedUrl)) return;
 
-  // Redirect tab back and open intended URL in a new tab
+  // It's a different URL — cancel is not possible via webNavigation API,
+  // so we redirect back immediately and open new tab
   chrome.tabs.update(tabId, { url: lockedUrl }, () => {
+    // Open the intended URL in a new tab
     chrome.tabs.create({ url: newUrl, active: true });
   });
 });
 
-chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+// Extra safety: if the tab somehow changed URL, snap it back.
+// Also re-apply title prefix once the page finishes loading.
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (!isLocked(tabId)) return;
 
-  // Fallback URL snap-back
   if (changeInfo.status === 'loading' && changeInfo.url) {
     const lockedUrl = getLockedUrl(tabId);
     const normalize = (u) => u.replace(/\/$/, '');
@@ -157,14 +149,13 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     }
   }
 
-  // Re-inject indicators after full page load (handles refresh)
+  // Re-inject prefix after page fully loads (handles refresh, SPA nav, etc.)
   if (changeInfo.status === 'complete') {
-    applyLockIndicators(tabId);
+    applyTitlePrefix(tabId);
   }
 });
 
-// ─── Cleanup & housekeeping ───────────────────────────────────────────────────
-
+// Clean up when a tab is closed
 chrome.tabs.onRemoved.addListener((tabId) => {
   if (lockedTabs[tabId]) {
     delete lockedTabs[tabId];
@@ -172,12 +163,12 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   }
 });
 
+// Update icon when tab becomes active (in case icon state drifted)
 chrome.tabs.onActivated.addListener(({ tabId }) => {
   updateIcon(tabId, !!lockedTabs[tabId]);
 });
 
-// ─── Popup message handler ────────────────────────────────────────────────────
-
+// Message handler for popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'getState') {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -190,7 +181,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         tabId: tab.id,
       });
     });
-    return true;
+    return true; // async
   }
 
   if (message.action === 'toggleLock') {

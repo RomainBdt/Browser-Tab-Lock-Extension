@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Tab Lock",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Lock a tab to a specific URL. Any navigation attempt opens a new tab instead.",
   "permissions": [
     "tabs",
