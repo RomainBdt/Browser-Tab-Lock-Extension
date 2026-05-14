@@ -1,6 +1,7 @@
 // Tab Lock - Background Service Worker
 // Stores locked tabs: { tabId: { url, origin } }
 let lockedTabs = {};
+let lastClosedLockedUrl = null;
 
 // Load persisted locked tabs on startup
 chrome.storage.local.get(['lockedTabs'], (result) => {
@@ -158,14 +159,42 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 // Clean up when a tab is closed
 chrome.tabs.onRemoved.addListener((tabId) => {
   if (lockedTabs[tabId]) {
+    lastClosedLockedUrl = lockedTabs[tabId].url;
     delete lockedTabs[tabId];
     persist();
+    // Show notification to warn about closed locked tab
+    chrome.notifications.create('lockedTabClosed', {
+      type: 'basic',
+      iconUrl: 'icons/icon48_locked.png',
+      title: 'Locked Tab Closed',
+      message: 'A locked tab was closed. Click to reopen it.',
+      buttons: [{ title: 'Reopen Tab' }],
+      requireInteraction: true
+    });
   }
 });
 
 // Update icon when tab becomes active (in case icon state drifted)
 chrome.tabs.onActivated.addListener(({ tabId }) => {
   updateIcon(tabId, !!lockedTabs[tabId]);
+});
+
+// Handle notification button clicks
+chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
+  if (notificationId === 'lockedTabClosed' && buttonIndex === 0 && lastClosedLockedUrl) {
+    chrome.tabs.create({ url: lastClosedLockedUrl });
+    lastClosedLockedUrl = null;
+    chrome.notifications.clear(notificationId);
+  }
+});
+
+// Handle notification click (if no button)
+chrome.notifications.onClicked.addListener((notificationId) => {
+  if (notificationId === 'lockedTabClosed' && lastClosedLockedUrl) {
+    chrome.tabs.create({ url: lastClosedLockedUrl });
+    lastClosedLockedUrl = null;
+    chrome.notifications.clear(notificationId);
+  }
 });
 
 // Message handler for popup
