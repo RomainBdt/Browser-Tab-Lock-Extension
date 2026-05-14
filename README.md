@@ -1,6 +1,6 @@
 # 🔒 Tab Lock
 
-A chromium extension that locks a tab to a specific URL. Any navigation attempt — link click, form submission, address bar change — opens in a new tab instead of leaving the locked page. Closing a locked tab triggers a confirmation dialog.
+A chromium extension that locks a tab to a specific URL. Any navigation attempt — link click, form submission, address bar change — opens in a new tab instead of leaving the locked page. Closing a locked tab shows a notification to reopen it if closed accidentally.
 
 ---
 
@@ -8,7 +8,8 @@ A chromium extension that locks a tab to a specific URL. Any navigation attempt 
 
 - **URL lock** — pin any tab to its current URL with one click
 - **Redirect on navigate** — all navigation from a locked tab opens in a new tab automatically
-- **Close confirmation** — the browser prompts before allowing a locked tab to close
+- **Adjacent tab placement** — redirected pages open immediately next to the locked source tab instead of at the end
+- **Close warning** — closing a locked tab shows a notification with an option to reopen it
 - **Tab title prefix** — locked tabs display a `🔒` prefix so they're instantly recognizable
 - **Persistent state** — lock state survives browser restarts (stored via `chrome.storage.local`)
 - **SPA-aware** — a `MutationObserver` keeps the title prefix in place even when JavaScript updates the page title dynamically
@@ -44,13 +45,15 @@ To update after pulling changes, click the **↺ Reload** button on the extensio
 
 The extension uses three browser APIs working together:
 
-**`chrome.webNavigation.onBeforeNavigate`** — intercepts navigation events on the main frame. When a locked tab attempts to navigate to a different URL, the extension immediately redirects the tab back to the locked URL and opens the intended destination in a new tab.
+**`chrome.webNavigation.onBeforeNavigate`** — intercepts navigation events on the main frame. When a locked tab attempts to navigate to a different URL, the extension immediately redirects the tab back to the locked URL and opens the intended destination in a new tab adjacent to the locked source.
 
 **`chrome.tabs.onUpdated`** — acts as a fallback snap-back in case a navigation slips past the above listener, and re-injects content scripts after each full page load (handles manual refreshes).
 
-**`chrome.scripting.executeScript`** — injects two behaviors directly into the page context:
-- A `MutationObserver` on the `<title>` element to maintain the `🔒` prefix
-- A `beforeunload` event listener that triggers the browser's native close-confirmation dialog
+**`chrome.scripting.executeScript`** — injects a `MutationObserver` on the `<title>` element to maintain the `🔒` prefix
+
+**`chrome.tabs.onRemoved`** — detects when a locked tab is closed and shows a notification with a reopen option
+
+**`chrome.notifications`** — handles user interaction with the notification to reopen the closed tab
 
 > **Note on Manifest V3:** MV3 service workers cannot cancel navigation before it starts. The extension detects the navigation and performs an immediate redirect + new tab open. On slow connections this may cause a brief flash. This is a platform-level constraint shared by all MV3 extensions.
 
@@ -81,7 +84,8 @@ tab-lock-extension/
 | `tabs` | Read the current tab's URL and update tab properties |
 | `storage` | Persist lock state across sessions |
 | `webNavigation` | Intercept navigation events before they commit |
-| `scripting` | Inject title prefix and close-confirmation into page context |
+| `scripting` | Inject title prefix into page context |
+| `notifications` | Show warning when a locked tab is closed |
 | `<all_urls>` | Required for `scripting` to work on any page |
 
 ---
@@ -89,7 +93,6 @@ tab-lock-extension/
 ## Known Limitations
 
 - Does not work on browser-internal pages (`brave://`, `chrome://`, `about:`) — these pages block content script injection by design
-- The close-confirmation dialog shows the browser's generic message, not a custom one — Chromium ignores the `returnValue` string for security reasons
 - Lock state is stored by `tabId`, which is not stable across browser restarts. If the browser is closed and reopened, previously locked tabs are no longer tracked (the stored state is cleaned up automatically)
 
 ---
